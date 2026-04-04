@@ -1,0 +1,8 @@
+google-adk
+google-adk[extensions]
+fastapi[standard]
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+pydantic-settings
