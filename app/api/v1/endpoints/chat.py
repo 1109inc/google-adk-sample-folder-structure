@@ -11,7 +11,7 @@ What this file does:
 """
 
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 import time
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -27,22 +27,17 @@ from app.models.user import User
 router = APIRouter()
 
 
-def build_user_context_message(user: User) -> str:
-    # Convert selected user fields into a short text block that the agent
-    # can use for light personalization.
-    context_lines = ["Authenticated user details:"]
+def build_user_state(user: User) -> dict[str, Any]:
+    # Build structured user-scoped state instead of injecting profile text
+    # into every message. ADK can reuse user:* keys across sessions.
+    state: dict[str, Any] = {}
 
     if user.full_name:
-        context_lines.append(f"- Name: {user.full_name}")
+        state["user:name"] = user.full_name
     if user.email:
-        context_lines.append(f"- Email: {user.email}")
+        state["user:email"] = user.email
 
-    context_lines.append("")
-    context_lines.append(
-        "Use these details only when they help personalize the response."
-    )
-
-    return "\n".join(context_lines)
+    return state
 
 
 @router.get("/")
@@ -55,9 +50,9 @@ async def chat(
     # belong to the real logged-in user.
     user_id = str(current_user.id)
 
-    # Build the final user message that will be sent to the agent.
-    user_context = build_user_context_message(current_user)
-    personalized_message = f"{user_context}\n\nUser message:\n{message}"
+    # Build structured state for stable user information that should not be
+    # pasted into every user message.
+    user_state = build_user_state(current_user)
 
     active_session_id = session_id
 
@@ -78,12 +73,13 @@ async def chat(
         new_session = await session_service.create_session(
             user_id=user_id,
             app_name=settings.APP_NAME,
+            state=user_state,
         )
         active_session_id = new_session.id
 
     content = types.Content(
         role="user",
-        parts=[types.Part(text=personalized_message)],
+        parts=[types.Part(text=message)],
     )
 
     # Track duration and usage metadata for the response payload.
